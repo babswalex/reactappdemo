@@ -79,6 +79,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ github.event.inputs.node_version }}
+          cache: 'pnpm'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
@@ -87,7 +88,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: Frontend
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Run linting
         working-directory: Frontend
