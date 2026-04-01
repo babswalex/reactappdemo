@@ -83,7 +83,10 @@ jobs:
       - name: Setup pnpm
         run: |
           npm install -g pnpm@8
-          echo "PATH=$(npm bin -g):$PATH" >> $GITHUB_ENV
+          PNPM_BIN="$(npm bin -g)"
+          echo "PNPM_BIN=$PNPM_BIN" >> $GITHUB_ENV
+          echo "PATH=$PNPM_BIN:$PATH" >> $GITHUB_ENV
+          ls -la "$PNPM_BIN/pnpm"
           pnpm --version
         shell: bash
 
