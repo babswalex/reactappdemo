@@ -82,8 +82,7 @@ jobs:
 
       - name: Setup pnpm
         run: |
-          corepack enable
-          corepack prepare pnpm@8.8.1 --activate
+          npm install -g pnpm@8
           pnpm --version
         shell: bash
 
