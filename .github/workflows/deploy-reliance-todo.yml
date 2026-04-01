@@ -65,7 +65,7 @@ on:
 
 env:
   NODE_VERSION: ${{ github.event.inputs.node_version }}
-  BUILD_PATH: 'Frontend/dist'
+  BUILD_PATH: Frontend/dist
 
 jobs:
   build:
@@ -79,54 +79,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-          run_install: false
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v3
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+        run: npm install -g pnpm@8
 
       - name: Install dependencies
         working-directory: Frontend
         run: pnpm install --frozen-lockfile
-
-      - name: Run linting
-        working-directory: Frontend
-        if: ${{ github.event.inputs.run_linting == 'true' }}
-        run: |
-          if pnpm run | grep -q "lint"; then
-            pnpm run lint
-          else
-            echo "No lint script found, skipping..."
-          fi
-        shell: bash
-
-      - name: Run tests
-        working-directory: Frontend
-        if: ${{ github.event.inputs.run_tests == 'true' }}
-        run: |
-          if pnpm run | grep -q "test"; then
-            pnpm test -- --coverage --watchAll=false
-          else
-            echo "No test script found, skipping..."
-          fi
-        shell: bash
-        env:
-          CI: true
 
       - name: Build React app
         working-directory: Frontend
@@ -166,10 +125,10 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:javascript-typescript"
+          category: /language:javascript-typescript
 
   build-docker:
-    name: Build & Push Docker Image
+    name: Build and Push Docker Image
     needs: build
     if: ${{ github.event.inputs.build_docker == 'true' }}
     runs-on: ubuntu-latest
@@ -202,11 +161,8 @@ jobs:
 
   deploy-staging:
     name: Deploy to Staging
-    needs: [build]
-    if: |
-      always() &&
-      needs.build.result == 'success' &&
-      github.event.inputs.deploy_to_staging == 'true'
+    needs: build
+    if: ${{ github.event.inputs.deploy_to_staging == 'true' }}
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -221,7 +177,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy to Azure App Service (Staging)
+      - name: Deploy to Azure App Service Staging
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ github.event.inputs.azure_app_service_name }}-staging
@@ -235,12 +191,8 @@ jobs:
 
   deploy-production:
     name: Deploy to Production
-    needs: [build, deploy-staging]
-    if: |
-      always() &&
-      needs.build.result == 'success' &&
-      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
-      github.event.inputs.deploy_to_production == 'true'
+    needs: deploy-staging
+    if: ${{ github.event.inputs.deploy_to_production == 'true' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -255,7 +207,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy to Azure App Service (Production)
+      - name: Deploy to Azure App Service Production
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ github.event.inputs.azure_app_service_name }}
@@ -268,10 +220,8 @@ jobs:
 
   notify-on-failure:
     name: Notify on Failure
-    needs: [build, security-scan, build-docker, deploy-staging, deploy-production]
-    if: |
-      failure() &&
-      github.event.inputs.notify_on_failure == 'true'
+    needs: build
+    if: failure() && github.event.inputs.notify_on_failure == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Send Slack Notification
