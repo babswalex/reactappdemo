@@ -65,7 +65,7 @@ on:
 
 env:
   NODE_VERSION: ${{ github.event.inputs.node_version }}
-  BUILD_PATH: './build'
+  BUILD_PATH: 'dist'  # Changed from './build' to 'dist' for Vite
 
 jobs:
   build:
@@ -79,18 +79,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ github.event.inputs.node_version }}
-          cache: 'npm'
+          # Remove cache: 'npm' since we don't have package-lock.json
 
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json', 'package.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install dependencies
-        run: npm ci
+        # Use npm install since we don't have package-lock.json
+        run: npm install
 
       - name: Run linting
         if: ${{ github.event.inputs.run_linting == 'true' }}
@@ -98,15 +99,21 @@ jobs:
 
       - name: Run tests
         if: ${{ github.event.inputs.run_tests == 'true' }}
-        run: npm test -- --coverage --watchAll=false
+        # Note: Your package.json doesn't have a test script, you might need to add one
+        run: |
+          if npm run | grep -q " test"; then
+            npm test -- --coverage --watchAll=false
+          else
+            echo "No test script found, skipping tests"
+          fi
         env:
           CI: true
 
-      - name: Build React app
+      - name: Build React app with Vite
         run: npm run build
         env:
           CI: true
-          REACT_APP_ENV: ${{ github.event.inputs.environment }}
+          VITE_APP_ENV: ${{ github.event.inputs.environment }}
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
