@@ -22,16 +22,21 @@ on:
         required: true
         type: string
         default: 'reliance-todo-dev'
+      node_version:
+        description: 'Node.js version'
+        required: false
+        type: string
+        default: '20.x'
       run_tests:
         description: 'Run tests'
         required: false
         type: boolean
-        default: false  # Changed to false since tests likely don't exist
+        default: false
       run_linting:
         description: 'Run linting'
         required: false
         type: boolean
-        default: false  # Changed to false since lint script may not exist
+        default: false
       run_security_scan:
         description: 'Run security scan (CodeQL)'
         required: false
@@ -56,11 +61,11 @@ on:
         description: 'Send Slack notification on failure'
         required: false
         type: boolean
-        default: false  # Changed to false if no Slack webhook
+        default: false
 
 env:
-  NODE_VERSION: ${{ github.event.inputs.node_version || '20.x' }}  # Fixed default
-  BUILD_PATH: './Frontend/dist'
+  NODE_VERSION: ${{ github.event.inputs.node_version }}
+  BUILD_PATH: 'Frontend/dist'
 
 jobs:
   build:
@@ -73,17 +78,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}  # Use env variable
-          cache: 'npm'  # Changed from pnpm to npm for compatibility
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
 
-      - name: Install dependencies with npm  # Changed from pnpm to npm
+      - name: Install dependencies
         working-directory: Frontend
-        run: |
-          npm ci  # Faster and more reliable than npm install
-        # If you must use pnpm, use this instead:
-        # run: |
-        #   npm install -g pnpm@8
-        #   pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Run linting
         working-directory: Frontend
@@ -94,7 +94,6 @@ jobs:
           else
             echo "No lint script found, skipping..."
           fi
-        shell: bash
 
       - name: Run tests
         working-directory: Frontend
@@ -105,23 +104,22 @@ jobs:
           else
             echo "No test script found, skipping..."
           fi
-        shell: bash
         env:
           CI: true
 
       - name: Build React app
         working-directory: Frontend
-        run: npm run build  # Changed to npm
+        run: npm run build
         env:
           CI: true
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}  # Added for Vite/React
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: reliance-todo-build
           path: ${{ env.BUILD_PATH }}
-          retention-days: 7  # Added to clean up old artifacts
+          retention-days: 7
 
   security-scan:
     name: Security Scan
@@ -162,7 +160,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: reliance-todo-build
-          path: ./build  # Changed path
+          path: ./build
 
       - name: Login to Azure Container Registry
         uses: docker/login-action@v3
@@ -175,7 +173,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile  # Added explicit Dockerfile path
+          file: ./Dockerfile
           push: true
           tags: |
             ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}/reliance-todo:${{ github.sha }}
@@ -249,7 +247,7 @@ jobs:
 
   notify-on-failure:
     name: Notify on Failure
-    needs: [build]
+    needs: [build, security-scan, build-docker, deploy-staging, deploy-production]
     if: |
       failure() &&
       github.event.inputs.notify_on_failure == 'true'
