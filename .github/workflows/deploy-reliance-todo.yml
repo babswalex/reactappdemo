@@ -84,11 +84,10 @@ jobs:
         run: |
           npm install -g pnpm@8
           PNPM_BIN="$(npm bin -g)"
-          echo "PNPM_BIN=$PNPM_BIN" >> $GITHUB_ENV
           echo "PATH=$PNPM_BIN:$PATH" >> $GITHUB_ENV
-          export PATH="$PNPM_BIN:$PATH"
+          echo "PATH=$PNPM_BIN:$PATH"
           ls -la "$PNPM_BIN/pnpm"
-          pnpm --version
+          "$PNPM_BIN/pnpm" --version
         shell: bash
 
       - name: Install dependencies
