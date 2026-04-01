@@ -83,6 +83,7 @@ jobs:
       - name: Setup pnpm
         run: |
           npm install -g pnpm@8
+          echo "PATH=$(npm bin -g):$PATH" >> $GITHUB_ENV
           pnpm --version
         shell: bash
 
