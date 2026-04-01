@@ -79,12 +79,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ github.event.inputs.node_version }}
-          cache: 'pnpm'
 
       - name: Setup pnpm
         run: |
           corepack enable
           corepack prepare pnpm@8.8.1 --activate
+          pnpm --version
         shell: bash
 
       - name: Install dependencies
