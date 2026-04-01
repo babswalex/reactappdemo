@@ -58,21 +58,35 @@ on:
         type: string
         default: '20.x'
 
-env:
-  NODE_VERSION: ${{ github.event.inputs.node_version }}
-  WORKING_DIR: 'frontend'
-  BUILD_PATH: 'frontend/dist'
-
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIR }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Find package.json location
+        id: find_package
+        run: |
+          # Find package.json, excluding node_modules
+          PACKAGE_PATH=$(find . -name "package.json" -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$PACKAGE_PATH" ]; then
+            echo "Error: package.json not found"
+            exit 1
+          fi
+          WORK_DIR=$(dirname "$PACKAGE_PATH")
+          echo "Found package.json in: $WORK_DIR"
+          echo "working_dir=$WORK_DIR" >> $GITHUB_OUTPUT
+          
+          # Determine build output directory
+          if [ -f "$WORK_DIR/vite.config.js" ] || [ -f "$WORK_DIR/vite.config.ts" ]; then
+            echo "build_path=$WORK_DIR/dist" >> $GITHUB_OUTPUT
+          elif [ -f "$WORK_DIR/webpack.config.js" ]; then
+            echo "build_path=$WORK_DIR/build" >> $GITHUB_OUTPUT
+          else
+            echo "build_path=$WORK_DIR/dist" >> $GITHUB_OUTPUT
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -82,20 +96,26 @@ jobs:
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
-          path: ${{ env.WORKING_DIR }}/node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles(format('{0}/package-lock.json', env.WORKING_DIR)) }}
+          path: ${{ steps.find_package.outputs.working_dir }}/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles(format('{0}/package-lock.json', steps.find_package.outputs.working_dir)) }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          cd ${{ steps.find_package.outputs.working_dir }}
+          npm install
 
       - name: Run linting
         if: ${{ github.event.inputs.run_linting == 'true' }}
-        run: npm run lint
+        run: |
+          cd ${{ steps.find_package.outputs.working_dir }}
+          npm run lint
 
-      - name: Build React app with Vite
-        run: npm run build
+      - name: Build React app
+        run: |
+          cd ${{ steps.find_package.outputs.working_dir }}
+          npm run build
         env:
           CI: true
           VITE_APP_ENV: ${{ github.event.inputs.environment }}
@@ -104,7 +124,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: reliance-todo-build
-          path: ${{ env.BUILD_PATH }}
+          path: ${{ steps.find_package.outputs.build_path }}
 
   security-scan:
     name: Security Scan
@@ -145,7 +165,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: reliance-todo-build
-          path: ${{ env.BUILD_PATH }}
+          path: ./build-output
 
       - name: Login to Azure Container Registry
         uses: docker/login-action@v3
@@ -179,7 +199,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: reliance-todo-build
-          path: ${{ env.BUILD_PATH }}
+          path: ./deploy-package
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -191,7 +211,7 @@ jobs:
         with:
           app-name: ${{ github.event.inputs.azure_app_service_name }}
           resource-group-name: ${{ github.event.inputs.azure_resource_group }}
-          package: ${{ env.BUILD_PATH }}
+          package: ./deploy-package
 
       - name: Azure logout
         run: az logout
@@ -214,7 +234,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: reliance-todo-build
-          path: ${{ env.BUILD_PATH }}
+          path: ./deploy-package
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -226,7 +246,7 @@ jobs:
         with:
           app-name: ${{ github.event.inputs.azure_app_service_name }}
           resource-group-name: ${{ github.event.inputs.azure_resource_group }}
-          package: ${{ env.BUILD_PATH }}
+          package: ./deploy-package
 
       - name: Azure logout
         run: az logout
