@@ -22,11 +22,6 @@ on:
         required: true
         type: string
         default: 'reliance-todo-dev'
-      run_tests:
-        description: 'Run tests'
-        required: false
-        type: boolean
-        default: true
       run_linting:
         description: 'Run linting'
         required: false
@@ -65,7 +60,7 @@ on:
 
 env:
   NODE_VERSION: ${{ github.event.inputs.node_version }}
-  BUILD_PATH: 'dist'  # Changed from './build' to 'dist' for Vite
+  BUILD_PATH: 'dist'
 
 jobs:
   build:
@@ -79,35 +74,21 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ github.event.inputs.node_version }}
-          # Remove cache: 'npm' since we don't have package-lock.json
 
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json', 'package.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
       - name: Install dependencies
-        # Use npm install since we don't have package-lock.json
         run: npm install
 
       - name: Run linting
         if: ${{ github.event.inputs.run_linting == 'true' }}
         run: npm run lint
-
-      - name: Run tests
-        if: ${{ github.event.inputs.run_tests == 'true' }}
-        # Note: Your package.json doesn't have a test script, you might need to add one
-        run: |
-          if npm run | grep -q " test"; then
-            npm test -- --coverage --watchAll=false
-          else
-            echo "No test script found, skipping tests"
-          fi
-        env:
-          CI: true
 
       - name: Build React app with Vite
         run: npm run build
@@ -204,10 +185,9 @@ jobs:
       - name: Deploy to Azure App Service (Staging)
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ github.event.inputs.azure_app_service_name }}-staging
+          app-name: ${{ github.event.inputs.azure_app_service_name }}
           resource-group-name: ${{ github.event.inputs.azure_resource_group }}
           package: ${{ env.BUILD_PATH }}
-          slot-name: staging
 
       - name: Azure logout
         run: az logout
