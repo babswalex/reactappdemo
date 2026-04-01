@@ -22,21 +22,16 @@ on:
         required: true
         type: string
         default: 'reliance-todo-dev'
-      node_version:
-        description: 'Node.js version'
-        required: false
-        type: string
-        default: '20.x'
       run_tests:
         description: 'Run tests'
         required: false
         type: boolean
-        default: false
+        default: true
       run_linting:
         description: 'Run linting'
         required: false
         type: boolean
-        default: false
+        default: true
       run_security_scan:
         description: 'Run security scan (CodeQL)'
         required: false
@@ -61,11 +56,16 @@ on:
         description: 'Send Slack notification on failure'
         required: false
         type: boolean
-        default: false
+        default: true
+      node_version:
+        description: 'Node.js version'
+        required: false
+        type: string
+        default: '20.x'
 
 env:
   NODE_VERSION: ${{ github.event.inputs.node_version }}
-  BUILD_PATH: Frontend/dist
+  BUILD_PATH: './build'
 
 jobs:
   build:
@@ -78,28 +78,41 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ github.event.inputs.node_version }}
+          cache: 'npm'
 
-      - name: Install pnpm
-        run: npm install -g pnpm@8
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
-        working-directory: Frontend
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
-      - name: Build React app
-        working-directory: Frontend
-        run: pnpm run build
+      - name: Run linting
+        if: ${{ github.event.inputs.run_linting == 'true' }}
+        run: npm run lint
+
+      - name: Run tests
+        if: ${{ github.event.inputs.run_tests == 'true' }}
+        run: npm test -- --coverage --watchAll=false
         env:
           CI: true
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+
+      - name: Build React app
+        run: npm run build
+        env:
+          CI: true
+          REACT_APP_ENV: ${{ github.event.inputs.environment }}
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: reliance-todo-build
           path: ${{ env.BUILD_PATH }}
-          retention-days: 7
 
   security-scan:
     name: Security Scan
@@ -125,10 +138,10 @@ jobs:
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: /language:javascript-typescript
+          category: "/language:javascript-typescript"
 
   build-docker:
-    name: Build and Push Docker Image
+    name: Build & Push Docker Image
     needs: build
     if: ${{ github.event.inputs.build_docker == 'true' }}
     runs-on: ubuntu-latest
@@ -140,7 +153,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: reliance-todo-build
-          path: ./build
+          path: ${{ env.BUILD_PATH }}
 
       - name: Login to Azure Container Registry
         uses: docker/login-action@v3
@@ -153,7 +166,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
           push: true
           tags: |
             ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}/reliance-todo:${{ github.sha }}
@@ -161,8 +173,13 @@ jobs:
 
   deploy-staging:
     name: Deploy to Staging
-    needs: build
-    if: ${{ github.event.inputs.deploy_to_staging == 'true' }}
+    needs: [build, security-scan, build-docker]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.build-docker.result == 'success' || needs.build-docker.result == 'skipped') &&
+      github.event.inputs.deploy_to_staging == 'true'
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -177,7 +194,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy to Azure App Service Staging
+      - name: Deploy to Azure App Service (Staging)
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ github.event.inputs.azure_app_service_name }}-staging
@@ -191,8 +208,14 @@ jobs:
 
   deploy-production:
     name: Deploy to Production
-    needs: deploy-staging
-    if: ${{ github.event.inputs.deploy_to_production == 'true' }}
+    needs: [build, security-scan, build-docker, deploy-staging]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.security-scan.result == 'success' || needs.security-scan.result == 'skipped') &&
+      (needs.build-docker.result == 'success' || needs.build-docker.result == 'skipped') &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      github.event.inputs.deploy_to_production == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -207,7 +230,7 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy to Azure App Service Production
+      - name: Deploy to Azure App Service (Production)
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ github.event.inputs.azure_app_service_name }}
@@ -220,8 +243,10 @@ jobs:
 
   notify-on-failure:
     name: Notify on Failure
-    needs: build
-    if: failure() && github.event.inputs.notify_on_failure == 'true'
+    needs: [build, security-scan, build-docker, deploy-staging, deploy-production]
+    if: |
+      failure() &&
+      github.event.inputs.notify_on_failure == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Send Slack Notification
