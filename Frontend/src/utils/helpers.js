@@ -1,4 +1,4 @@
-import {resetUserData} from "../Redux/slices/userSlice";
+import {resetUserData} from "../redux/slices/userSlice";
 import store from "../redux/store";
 
 export const getUserData = () => {
@@ -8,7 +8,6 @@ export const getUserData = () => {
 export const resetUserInfo = () => {
     store.dispatch(resetUserData());
 };
-
 
 export const isRequiredFieldValuesPassed = (obj, fields, type) => {
     if (type === "eq") {
@@ -32,7 +31,6 @@ export const formatDate = (date) => {
 
     return "Not specified";
 };
-
 
 // Title words
 String.prototype.titleWords = function () {
