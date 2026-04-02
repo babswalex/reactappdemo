@@ -70,7 +70,7 @@ function LoginPage() {
                         onClick={login}
                     > {loading ? 'Loading...' : 'Login'} </button>
                     <span className="text-[13px] ml-3 text-center mt-4">
-                        Don't have an account?
+                        Don&apos;t have an account?
                         <u className="cursor-pointer ml-2" onClick={() => navigate('/register')}>
                             Create Account
                         </u>
