@@ -204,7 +204,7 @@ jobs:
   deploy-production:
     name: Deploy to Production
     needs: [build, security-scan, build-docker, deploy-staging]
-    if: ${{ github.event.inputs.deploy_to_production == 'true' }} #&& needs.build.result == 'success' && (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') }}
+    #if: ${{ github.event.inputs.deploy_to_production == 'true' }} #&& needs.build.result == 'success' && (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') }}
     runs-on: ubuntu-latest
     environment: production
     steps:
