@@ -17,11 +17,16 @@ on:
         required: true
         type: string
         default: 'rg-reliance-todo-dev'
-      azure_app_service_name:
-        description: 'Azure App Service name'
+      azure_static_web_app_name:
+        description: 'Azure Static Web App base name'
         required: true
         type: string
-        default: 'reliance-todo-dev'
+        default: 'reliance-todo'
+      deploy_to_dev:
+        description: 'Deploy to dev environment'
+        required: false
+        type: boolean
+        default: false
       run_linting:
         description: 'Run linting'
         required: false
@@ -181,6 +186,27 @@ jobs:
             ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}/reliance-todo:${{ github.sha }}
             ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}/reliance-todo:latest
 
+  deploy-dev:
+    name: Deploy to Dev
+    needs: [build, security-scan, build-docker]
+    if: ${{ github.event.inputs.deploy_to_dev == 'true' && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reliance-todo-build
+          path: ./deploy-package
+
+      - name: Deploy to Azure Static Web App (Dev)
+        uses: azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: "upload"
+          app_location: "./deploy-package"
+          output_location: "."
+
   deploy-staging:
     name: Deploy to Staging
     needs: [build, security-scan, build-docker]
@@ -194,12 +220,13 @@ jobs:
           name: reliance-todo-build
           path: ./deploy-package
 
-      - name: Deploy to Azure App Service (Staging)
-        uses: azure/webapps-deploy@v3
+      - name: Deploy to Azure Static Web App (Staging)
+        uses: azure/static-web-apps-deploy@v1
         with:
-          app-name: ${{ github.event.inputs.azure_app_service_name }}
-          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
-          package: ./deploy-package
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: "upload"
+          app_location: "./deploy-package"
+          output_location: "."
 
   deploy-production:
     name: Deploy to Production
@@ -218,16 +245,17 @@ jobs:
           name: reliance-todo-build
           path: ./deploy-package
 
-      - name: Deploy to Azure App Service (Production)
-        uses: azure/webapps-deploy@v3
+      - name: Deploy to Azure Static Web App (Production)
+        uses: azure/static-web-apps-deploy@v1
         with:
-          app-name: ${{ github.event.inputs.azure_app_service_name }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: ./deploy-package
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: "upload"
+          app_location: "./deploy-package"
+          output_location: "."
 
   notify-on-failure:
     name: Notify on Failure
-    needs: [build, security-scan, build-docker, deploy-staging, deploy-production]
+    needs: [build, security-scan, build-docker, deploy-dev, deploy-staging, deploy-production]
     if: ${{ failure() && github.event.inputs.notify_on_failure == 'true' }}
     runs-on: ubuntu-latest
     steps:
