@@ -29,10 +29,9 @@ on:
         default: false
 
 jobs:
-  build:
-    name: Build
+  build-and-deploy:
+    name: Build & Deploy
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -42,84 +41,59 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install dependencies & Build
         run: |
           cd Frontend
           npm install
-
-      - name: Build app
-        run: |
-          cd Frontend
           npm run build
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-build
-          path: Frontend/dist   # ✅ FIXED
 
   deploy-dev:
     name: Deploy to Dev
-    needs: build
+    needs: build-and-deploy
     if: ${{ github.event.inputs.deploy_to_dev == 'true' }}
     runs-on: ubuntu-latest
     environment: dev
-
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-build
-          path: ./deploy
+      - uses: actions/checkout@v4
 
       - name: Deploy to Azure Static Web App (Dev)
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: "upload"
-          app_location: "./deploy"
-          output_location: "."   # ✅ IMPORTANT (already built)
+          app_location: "Frontend/dist"
+          output_location: ""
 
   deploy-staging:
     name: Deploy to Staging
-    needs: build
+    needs: build-and-deploy
     if: ${{ github.event.inputs.deploy_to_staging == 'true' }}
     runs-on: ubuntu-latest
     environment: staging
-
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-build
-          path: ./deploy
+      - uses: actions/checkout@v4
 
       - name: Deploy to Azure Static Web App (Staging)
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: "upload"
-          app_location: "./deploy"
-          output_location: "."   # ✅ IMPORTANT
+          app_location: "Frontend/dist"
+          output_location: ""
 
   deploy-production:
     name: Deploy to Production
-    needs: build
+    needs: build-and-deploy
     if: ${{ github.event.inputs.deploy_to_production == 'true' }}
     runs-on: ubuntu-latest
     environment: production
-
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: app-build
-          path: ./deploy
+      - uses: actions/checkout@v4
 
       - name: Deploy to Azure Static Web App (Production)
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: "upload"
-          app_location: "./deploy"
-          output_location: "."   # ✅ IMPORTANT
+          app_location: "Frontend/dist"
+          output_location: ""
