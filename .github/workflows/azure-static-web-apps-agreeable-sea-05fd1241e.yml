@@ -16,7 +16,7 @@ on:
         description: 'Deploy to dev environment'
         required: false
         type: boolean
-        default: true
+        default: false
       deploy_to_staging:
         description: 'Deploy to staging environment'
         required: false
@@ -27,73 +27,114 @@ on:
         required: false
         type: boolean
         default: false
+      node_version:
+        description: 'Node.js version'
+        required: false
+        type: string
+        default: '20.x'
 
 jobs:
-  build-and-deploy:
-    name: Build & Deploy
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Find package.json location
+        id: find_package
+        run: |
+          PACKAGE_PATH=$(find . -name "package.json" -not -path "*/node_modules/*" | head -n 1)
+          WORK_DIR=$(dirname "$PACKAGE_PATH")
+          echo "working_dir=$WORK_DIR" >> $GITHUB_OUTPUT
+          if [ -f "$WORK_DIR/vite.config.js" ] || [ -f "$WORK_DIR/vite.config.ts" ]; then
+            echo "build_path=$WORK_DIR/dist" >> $GITHUB_OUTPUT
+          else
+            echo "build_path=$WORK_DIR/build" >> $GITHUB_OUTPUT
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ github.event.inputs.node_version }}
 
-      - name: Install dependencies & Build
+      - name: Install dependencies
         run: |
-          cd Frontend
+          cd ${{ steps.find_package.outputs.working_dir }}
           npm install
+
+      - name: Build app
+        run: |
+          cd ${{ steps.find_package.outputs.working_dir }}
           npm run build
+        env:
+          CI: true
+          VITE_APP_ENV: ${{ github.event.inputs.environment }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reliance-todo-build
+          path: ${{ steps.find_package.outputs.build_path }}
 
   deploy-dev:
     name: Deploy to Dev
-    needs: build-and-deploy
+    needs: build
     if: ${{ github.event.inputs.deploy_to_dev == 'true' }}
     runs-on: ubuntu-latest
     environment: dev
     steps:
-      - uses: actions/checkout@v4
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reliance-todo-build
+          path: ./deploy-package
 
       - name: Deploy to Azure Static Web App (Dev)
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: "upload"
-          app_location: "Frontend/dist"
+          action: upload
+          app_location: "./deploy-package"
           output_location: ""
 
   deploy-staging:
     name: Deploy to Staging
-    needs: build-and-deploy
+    needs: build
     if: ${{ github.event.inputs.deploy_to_staging == 'true' }}
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@v4
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reliance-todo-build
+          path: ./deploy-package
 
       - name: Deploy to Azure Static Web App (Staging)
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: "upload"
-          app_location: "Frontend/dist"
+          action: upload
+          app_location: "./deploy-package"
           output_location: ""
 
   deploy-production:
     name: Deploy to Production
-    needs: build-and-deploy
+    needs: build
     if: ${{ github.event.inputs.deploy_to_production == 'true' }}
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reliance-todo-build
+          path: ./deploy-package
 
       - name: Deploy to Azure Static Web App (Production)
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: "upload"
-          app_location: "Frontend/dist"
+          action: upload
+          app_location: "./deploy-package"
           output_location: ""
