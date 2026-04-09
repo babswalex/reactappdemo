@@ -16,12 +16,12 @@ on:
         description: 'Azure Resource Group name'
         required: true
         type: string
-        default: 'rg-reliance-todo-dev'
+        default: 'job-ai-rg'
       azure_static_web_app_name:
         description: 'Azure Static Web App base name'
         required: true
         type: string
-        default: 'reliance-todo'
+        default: 'ReactWeb'
       deploy_to_dev:
         description: 'Deploy to dev environment'
         required: false
@@ -89,7 +89,6 @@ jobs:
             echo "build_path=$WORK_DIR/build" >> $GITHUB_OUTPUT
           else
             echo "build_path=$WORK_DIR/dist" >> $GITHUB_OUTPUT
-          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -203,6 +202,8 @@ jobs:
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          azure_static_web_apps_app_name: ReactWeb
+          azure_static_web_apps_rg: job-ai-rg
           action: "upload"
           app_location: "./deploy-package"
           output_location: "."
@@ -224,6 +225,8 @@ jobs:
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          azure_static_web_apps_app_name: ReactWeb
+          azure_static_web_apps_rg: job-ai-rg
           action: "upload"
           app_location: "./deploy-package"
           output_location: "."
@@ -249,6 +252,8 @@ jobs:
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          azure_static_web_apps_app_name: ReactWeb
+          azure_static_web_apps_rg: job-ai-rg
           action: "upload"
           app_location: "./deploy-package"
           output_location: "."
