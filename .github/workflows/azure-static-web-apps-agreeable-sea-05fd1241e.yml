@@ -12,8 +12,33 @@ on:
           - staging
           - production
         default: 'dev'
+      azure_resource_group:
+        description: 'Azure Resource Group name'
+        required: true
+        type: string
+        default: 'rg-reliance-todo-dev'
+      azure_static_web_app_name:
+        description: 'Azure Static Web App base name'
+        required: true
+        type: string
+        default: 'reliance-todo'
       deploy_to_dev:
         description: 'Deploy to dev environment'
+        required: false
+        type: boolean
+        default: false
+      run_linting:
+        description: 'Run linting'
+        required: false
+        type: boolean
+        default: true
+      run_security_scan:
+        description: 'Run security scan (CodeQL)'
+        required: false
+        type: boolean
+        default: false
+      build_docker:
+        description: 'Build and push Docker image to ACR'
         required: false
         type: boolean
         default: false
@@ -27,6 +52,11 @@ on:
         required: false
         type: boolean
         default: false
+      notify_on_failure:
+        description: 'Send Slack notification on failure'
+        required: false
+        type: boolean
+        default: true
       node_version:
         description: 'Node.js version'
         required: false
@@ -45,24 +75,47 @@ jobs:
         id: find_package
         run: |
           PACKAGE_PATH=$(find . -name "package.json" -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$PACKAGE_PATH" ]; then
+            echo "Error: package.json not found"
+            exit 1
+          fi
           WORK_DIR=$(dirname "$PACKAGE_PATH")
+          echo "Found package.json in: $WORK_DIR"
           echo "working_dir=$WORK_DIR" >> $GITHUB_OUTPUT
+          
           if [ -f "$WORK_DIR/vite.config.js" ] || [ -f "$WORK_DIR/vite.config.ts" ]; then
             echo "build_path=$WORK_DIR/dist" >> $GITHUB_OUTPUT
-          else
+          elif [ -f "$WORK_DIR/webpack.config.js" ]; then
             echo "build_path=$WORK_DIR/build" >> $GITHUB_OUTPUT
+          else
+            echo "build_path=$WORK_DIR/dist" >> $GITHUB_OUTPUT
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ github.event.inputs.node_version }}
 
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.find_package.outputs.working_dir }}/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles(format('{0}/package-lock.json', steps.find_package.outputs.working_dir)) }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
       - name: Install dependencies
         run: |
           cd ${{ steps.find_package.outputs.working_dir }}
           npm install
 
-      - name: Build app
+      - name: Run linting
+        if: ${{ github.event.inputs.run_linting == 'true' }}
+        run: |
+          cd ${{ steps.find_package.outputs.working_dir }}
+          npm run lint -- --max-warnings 1000 || echo "⚠️ Linting issues found but continuing with build"
+
+      - name: Build React app
         run: |
           cd ${{ steps.find_package.outputs.working_dir }}
           npm run build
@@ -76,10 +129,67 @@ jobs:
           name: reliance-todo-build
           path: ${{ steps.find_package.outputs.build_path }}
 
+  security-scan:
+    name: Security Scan
+    needs: build
+    if: ${{ github.event.inputs.run_security_scan == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
+  build-docker:
+    name: Build & Push Docker Image
+    needs: build
+    if: ${{ github.event.inputs.build_docker == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reliance-todo-build
+          path: ./build-output
+
+      - name: Login to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}
+          username: ${{ secrets.AZURE_REGISTRY_USERNAME }}
+          password: ${{ secrets.AZURE_REGISTRY_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}/reliance-todo:${{ github.sha }}
+            ${{ secrets.AZURE_REGISTRY_LOGIN_SERVER }}/reliance-todo:latest
+
   deploy-dev:
     name: Deploy to Dev
-    needs: build
-    if: ${{ github.event.inputs.deploy_to_dev == 'true' }}
+    needs: [build, security-scan, build-docker]
+    if: ${{ github.event.inputs.deploy_to_dev == 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -93,14 +203,14 @@ jobs:
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: upload
+          action: "upload"
           app_location: "./deploy-package"
-          output_location: ""
+          output_location: "."
 
   deploy-staging:
     name: Deploy to Staging
-    needs: build
-    if: ${{ github.event.inputs.deploy_to_staging == 'true' }}
+    needs: [build, security-scan, build-docker]
+    if: ${{ github.event.inputs.deploy_to_staging == 'true' && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -114,14 +224,17 @@ jobs:
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: upload
+          action: "upload"
           app_location: "./deploy-package"
-          output_location: ""
+          output_location: "."
 
   deploy-production:
     name: Deploy to Production
-    needs: build
-    if: ${{ github.event.inputs.deploy_to_production == 'true' }}
+    needs: [build, security-scan, build-docker, deploy-staging]
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      github.event.inputs.deploy_to_production == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -135,6 +248,32 @@ jobs:
         uses: azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-          action: upload
+          action: "upload"
           app_location: "./deploy-package"
-          output_location: ""
+          output_location: "."
+
+  notify-on-failure:
+    name: Notify on Failure
+    needs: [build, security-scan, build-docker, deploy-dev, deploy-staging, deploy-production]
+    if: ${{ failure() && github.event.inputs.notify_on_failure == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack Notification
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "❌ Reliance Todo Deployment Failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "❌ *Reliance Todo Deployment Failed*\n\n*Environment:* ${{ github.event.inputs.environment }}\n*Branch:* ${{ github.ref_name }}\n*Triggered by:* ${{ github.actor }}\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
